@@ -24,6 +24,8 @@ logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
 logger.addHandler(pi_status_light.handler)
 
+offset = -0.8
+
 def load_config():
   with open(smarthings_config_path, 'r') as myfile:
     return json.loads(myfile.read().translate(None, ' \n\t\r'))
@@ -61,7 +63,7 @@ def load_state():
   # Parse JSON into an object with attributes corresponding to dict keys.
   # x = json.loads(data, object_hook=lambda d: namedtuple('X', d.keys())(*d.values()))
   thermostatOperatingState = 'heating' if pi_status_light.is_on() == 1 else 'idle'
-  temperature,pressure,humidity = bme280.readBME280All()
+  temperature,pressure,humidity = getDataValue()
   return json.dumps(
       {
           'temperature': temperature, 
@@ -163,7 +165,7 @@ class Control(Thread):
   def run(self):
     while True:
       report_required = False
-      temperature,pressure,humidity = bme280.readBME280All()
+      temperature,pressure,humidity = getDataValue()
       data = load_data()
       now = datetime.now()
       report_required = update_mode(now, temperature, data)
@@ -197,6 +199,11 @@ class HeatButton(Thread):
           report_update()
       else:
         time.sleep(0.2)
+
+def getDataValue():
+  temperature,pressure,humidity = bme280.readBME280All()
+  temperature = temperature + offset
+  return temperature,pressure,humidity
 
 def main():
   pi_status_light.initGpio()
