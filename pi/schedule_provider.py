@@ -24,8 +24,6 @@ logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
 logger.addHandler(pi_status_light.handler)
 
-offset = -0.8
-
 def load_config():
   with open(smarthings_config_path, 'r') as myfile:
     return json.loads(myfile.read().translate(None, ' \n\t\r'))
@@ -55,6 +53,8 @@ def write_schedule(schedule):
   schedule_data = json.loads(schedule)
   data['daysOfWeek'] = schedule_data['daysOfWeek']
   data['minimun_temp'] = schedule_data['minimun_temp']
+  data['offset_temp'] = schedule_data['offset_temp']
+  data['temp_on_offset'] = schedule_data['temp_on_offset']
   logger.debug("Received schedule and minimun_temp update")
   write_json_data(data)
 
@@ -63,7 +63,7 @@ def load_state():
   # Parse JSON into an object with attributes corresponding to dict keys.
   # x = json.loads(data, object_hook=lambda d: namedtuple('X', d.keys())(*d.values()))
   thermostatOperatingState = 'heating' if pi_status_light.is_on() == 1 else 'idle'
-  temperature,pressure,humidity = getDataValue()
+  temperature,pressure,humidity = getDataValue(data['offset_temp'])
   return json.dumps(
       {
           'temperature': temperature, 
@@ -87,7 +87,7 @@ def update_mode(now, currentTemp, data):
   elif  data['state']['thermostatMode'] == 'turning_off':
     data['state']['thermostatMode'] = 'off'
     report_required = True
-  if data['state']['thermostatMode'] == 'heat' and data['state']['heatingSetpoint'] < currentTemp - 0.5:
+  if data['state']['thermostatMode'] == 'heat' and data['state']['heatingSetpoint'] < currentTemp - data['temp_on_offset']:
     data['state']['thermostatMode'] = 'auto'
     data['state']['setDate'] = now.strftime('%b-%d-%Y_%H:%M')
     data['state']['heatingSetpoint'] = currentTemp if currentTemp > s_temp else s_temp
@@ -129,7 +129,7 @@ def should_be_on(now, currentTemp, data):
 
   if data['state']['thermostatMode'] == 'auto':
     if pi_status_light.is_on():
-      currentTemp = currentTemp - 0.5
+      currentTemp = currentTemp - data['temp_on_offset']
     return True if get_temp(now, data) > currentTemp else False
 
   # Lower than min temp set
@@ -165,8 +165,8 @@ class Control(Thread):
   def run(self):
     while True:
       report_required = False
-      temperature,pressure,humidity = getDataValue()
       data = load_data()
+      temperature,pressure,humidity = getDataValue(data['offset_temp'])
       now = datetime.now()
       report_required = update_mode(now, temperature, data)
       if should_be_on(now, temperature, data):
@@ -200,7 +200,7 @@ class HeatButton(Thread):
       else:
         time.sleep(0.2)
 
-def getDataValue():
+def getDataValue(offset):
   temperature,pressure,humidity = bme280.readBME280All()
   temperature = temperature + offset
   return temperature,pressure,humidity
