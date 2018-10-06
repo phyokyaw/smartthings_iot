@@ -14,6 +14,7 @@ import wiringpi
 from requests.exceptions import ConnectionError
 from requests.exceptions import Timeout
 import logging
+import feedparser
 
 ''' Uses https://bitbucket.org/MattHawkinsUK/rpispy-misc/raw/master/python/bme280.py '''
 
@@ -23,6 +24,8 @@ smarthings_config_path = os.path.join(home_dir, '.smartthings.json')
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
 logger.addHandler(pi_status_light.handler)
+weather_area_code_didcot = '2651269'
+weather_area_code_didcot_url = 'https://weather-broker-cdn.api.bbci.co.uk/en/forecast/rss/3day/' + weather_area_code_didcot
 
 def load_config():
   with open(smarthings_config_path, 'r') as myfile:
@@ -72,10 +75,16 @@ def load_state():
           'thermostatOperatingState': thermostatOperatingState,
           'thermostatMode': data['state']['thermostatMode'],
           'setDate': data['state']['setDate'],
-          'heatingSetpoint': data['state']['heatingSetpoint']
+          'heatingSetpoint': data['state']['heatingSetpoint'],
+          'weather': 
+          {
+            'today': data['weather']['today'],
+            'tomorrow': data['weather']['tomorrow'],
+            'day2': data['weather']['day2']
+          }
       })
 
-def update_mode(now, currentTemp, data):
+def update_mode(now, currentTemp, currentWeatherData, data):
   report_required = False
   s_temp = get_temp(now, data)
   if data['state']['thermostatMode'] == 'turning_heat':
@@ -101,6 +110,13 @@ def update_mode(now, currentTemp, data):
     data['recorded_temp'] = currentTemp
     logger.debug("Update temperature to " + str(currentTemp))
     report_required = True
+  #if unicode(currentWeatherData[0]) != unicode(data['weather']['today']):
+  #  data['weather']['today'] = currentWeatherData[0]
+  #  data['weather']['tomorrow'] = currentWeatherData[1]
+  #  data['weather']['day2'] = currentWeatherData[2]
+  #  print 'need update ' + currentWeatherData[0].encode('utf8')
+  #  print 'need update ' + data['weather']['today'].encode('utf8')
+    # report_required = True
   if (report_required):
       logger.debug("Update mode to " + str(data['state']['thermostatMode']))
       logger.debug("Update heatingSetpoint to " + str(data['state']['heatingSetpoint']))
@@ -163,22 +179,38 @@ class Control(Thread):
     self.daemon = True
 
   def run(self):
+    lastWeatherDownload = datetime.now()
+    weatherData = get_weather()
     while True:
-      report_required = False
-      data = load_data()
-      temperature,pressure,humidity = getDataValue(data['offset_temp'])
-      now = datetime.now()
-      report_required = update_mode(now, temperature, data)
-      if should_be_on(now, temperature, data):
-        if pi_status_light.is_on() != 1:
-          pi_status_light.turn_on(True)
-          report_required = True
-      else:
-        if pi_status_light.is_on() == 1:
-          pi_status_light.turn_on(False)
-          report_required = True
-      if report_required:
-        report_update()
+      try:
+        report_required = False
+        logger.debug("reading schedule data from file")
+        data = load_data()
+        logger.debug("reading temp values from device")
+        temperature,pressure,humidity = getDataValue(data['offset_temp'])
+        now = datetime.now()
+        if now > lastWeatherDownload + timedelta(minutes=30):
+          lastWeatherDownload = now
+          weatherData = get_weather()
+        logger.debug("update mode and write data")
+        report_required = update_mode(now, temperature, weatherData, data)
+        if should_be_on(now, temperature, data):
+          if pi_status_light.is_on() != 1:
+            logger.debug("trying to turn on")
+            pi_status_light.turn_on(True)
+            report_required = True
+        else:
+          if pi_status_light.is_on() == 1:
+            logger.debug("trying to turn off")
+            pi_status_light.turn_on(False)
+            report_required = True
+        if report_required:
+          logger.debug("reporting back to smartthings")
+          report_update()
+      except Exception as e:
+        logger.error(e)
+        pi_status_light.turn_error()
+
       time.sleep(5)
 
 class HeatButton(Thread):
@@ -204,6 +236,11 @@ def getDataValue(offset):
   temperature,pressure,humidity = bme280.readBME280All()
   temperature = temperature + offset
   return temperature,pressure,humidity
+
+def get_weather():
+  weather_data = feedparser.parse(weather_area_code_didcot_url)
+  logger.debug("Got weather data")
+  return [weather_data['entries'][0]['title'], weather_data['entries'][1]['title'], weather_data['entries'][2]['title']]
 
 def main():
   pi_status_light.initGpio()

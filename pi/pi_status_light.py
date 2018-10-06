@@ -24,7 +24,7 @@ path = "/var/log/thermostat.log"
 
 # add a rotating handler
 handler = RotatingFileHandler(path, maxBytes=1024*500, backupCount=5)
-handler.setFormatter(logging.Formatter('%(asctime)s.%(msecs)03d %(levelname)-8s %(message)s', datefmt='%m/%d/%Y %H:%M:%S'))
+handler.setFormatter(logging.Formatter('%(asctime)s.%(msecs)03d %(levelname)-8s %(message)s', datefmt='%d/%m/%Y %H:%M:%S'))
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
 logger.addHandler(handler)
@@ -68,6 +68,9 @@ class OPER_STATE(Enum):
 def turn_on(on):
   set_state(OPER_STATE.RUNNING if on == True else OPER_STATE.OFF)
   wiringpi.digitalWrite(RELAY_GPIO, int(on == True))
+
+def turn_error():
+  set_state(OPER_STATE.ERROR)
 
 def is_on():
   return wiringpi.digitalRead(RELAY_GPIO)
