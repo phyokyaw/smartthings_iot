@@ -24,7 +24,7 @@ path = "/var/log/thermostat.log"
 
 # add a rotating handler
 handler = RotatingFileHandler(path, maxBytes=1024*500, backupCount=5)
-handler.setFormatter(logging.Formatter('%(asctime)s.%(msecs)03d %(levelname)-8s %(message)s', datefmt='%d/%m/%Y %H:%M:%S'))
+handler.setFormatter(logging.Formatter('%(asctime)s.%(msecs)03d %(levelname)-8s [%(filename)s:%(lineno)d] %(message)s', datefmt='%d/%m/%Y %H:%M:%S'))
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
 logger.addHandler(handler)

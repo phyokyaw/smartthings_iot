@@ -15,6 +15,9 @@ from requests.exceptions import ConnectionError
 from requests.exceptions import Timeout
 import logging
 import feedparser
+import requests
+from io import BytesIO
+import re
 
 ''' Uses https://bitbucket.org/MattHawkinsUK/rpispy-misc/raw/master/python/bme280.py '''
 
@@ -110,13 +113,11 @@ def update_mode(now, currentTemp, currentWeatherData, data):
     data['recorded_temp'] = currentTemp
     logger.debug("Update temperature to " + str(currentTemp))
     report_required = True
-  #if unicode(currentWeatherData[0]) != unicode(data['weather']['today']):
-  #  data['weather']['today'] = currentWeatherData[0]
-  #  data['weather']['tomorrow'] = currentWeatherData[1]
-  #  data['weather']['day2'] = currentWeatherData[2]
-  #  print 'need update ' + currentWeatherData[0].encode('utf8')
-  #  print 'need update ' + data['weather']['today'].encode('utf8')
-    # report_required = True
+  if currentWeatherData is not None:
+    data['weather']['today'] = currentWeatherData[0]
+    data['weather']['tomorrow'] = currentWeatherData[1]
+    data['weather']['day2'] = currentWeatherData[2]
+    report_required = True
   if (report_required):
       logger.debug("Update mode to " + str(data['state']['thermostatMode']))
       logger.debug("Update heatingSetpoint to " + str(data['state']['heatingSetpoint']))
@@ -179,8 +180,8 @@ class Control(Thread):
     self.daemon = True
 
   def run(self):
-    lastWeatherDownload = datetime.now()
-    weatherData = get_weather()
+    lastWeatherDownload = None
+    weatherData = None
     while True:
       try:
         report_required = False
@@ -189,9 +190,15 @@ class Control(Thread):
         logger.debug("reading temp values from device")
         temperature,pressure,humidity = getDataValue(data['offset_temp'])
         now = datetime.now()
-        if now > lastWeatherDownload + timedelta(minutes=30):
-          lastWeatherDownload = now
+        if lastWeatherDownload is None:
           weatherData = get_weather()
+          lastWeatherDownload = now
+        else:
+          if now > lastWeatherDownload + timedelta(minutes=1):
+            lastWeatherDownload = now
+            weatherData = get_weather()
+          else:
+            weatherData = None
         logger.debug("update mode and write data")
         report_required = update_mode(now, temperature, weatherData, data)
         if should_be_on(now, temperature, data):
@@ -237,10 +244,34 @@ def getDataValue(offset):
   temperature = temperature + offset
   return temperature,pressure,humidity
 
+def parse_weather(data):
+  temp = {}
+  match = re.compile(":(.*?),").search(data)
+  if match:
+    temp['summary'] = match.group(1)
+  match = re.compile("Minimum Temperature:\s*(-?\d+)").search(data)
+  if match:
+    temp['min'] = match.group(1)
+  match = re.compile("Maximum Temperature:\s*(-?\d+)").search(data)
+  if match:
+    temp['max'] = match.group(1)
+  return temp
+
 def get_weather():
-  weather_data = feedparser.parse(weather_area_code_didcot_url)
-  logger.debug("Got weather data")
-  return [weather_data['entries'][0]['title'], weather_data['entries'][1]['title'], weather_data['entries'][2]['title']]
+  try:
+    resp = requests.get(weather_area_code_didcot_url, timeout=20.0)
+    # Put it to memory stream object universal feedparser
+    content = BytesIO(resp.content)
+    # Parse content
+    weather_data = feedparser.parse(content)
+    logger.debug("Got weather data")
+    today = parse_weather(weather_data['entries'][0]['title'])
+    tomorrow = parse_weather(weather_data['entries'][1]['title'])
+    twoday = parse_weather(weather_data['entries'][2]['title'])
+    return today, tomorrow, twoday
+  except Exception as e:
+    logger.error("Error getting weather update: " + e.message)
+    return None
 
 def main():
   pi_status_light.initGpio()
