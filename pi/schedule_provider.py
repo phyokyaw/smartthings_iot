@@ -25,7 +25,7 @@ home_dir = '/home/pi'
 file_path = os.path.join(home_dir, '.schedule.json')
 smarthings_config_path = os.path.join(home_dir, '.smartthings.json')
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.DEBUG)
+logger.setLevel(logging.ERROR)
 logger.addHandler(pi_status_light.handler)
 weather_area_code_didcot = '2651269'
 weather_area_code_didcot_url = 'https://weather-broker-cdn.api.bbci.co.uk/en/forecast/rss/3day/' + weather_area_code_didcot
@@ -164,9 +164,9 @@ def report_update():
       timeout=1.0)
     logger.debug("Got status " + str(response.status_code))
   except ConnectionError as e:    # This is the correct syntax
-    logger.error("Connection error")
+    logger.exception("Connection error")
   except Timeout as e:    # This is the correct syntax
-    logger.error("Connection timeout")
+    logger.exception("Connection timeout")
 
 def in_between(now, start, end):
   if start <= end:
@@ -215,9 +215,8 @@ class Control(Thread):
           logger.debug("reporting back to smartthings")
           report_update()
       except Exception as e:
-        logger.error(e)
+        logger.exception("Error in main loop")
         pi_status_light.turn_error()
-
       time.sleep(5)
 
 class HeatButton(Thread):
@@ -261,16 +260,21 @@ def get_weather():
   try:
     resp = requests.get(weather_area_code_didcot_url, timeout=20.0)
     # Put it to memory stream object universal feedparser
+    logger.debug("Get content from request")
     content = BytesIO(resp.content)
+    logger.debug("Parsing content")
     # Parse content
     weather_data = feedparser.parse(content)
     logger.debug("Got weather data")
-    today = parse_weather(weather_data['entries'][0]['title'])
-    tomorrow = parse_weather(weather_data['entries'][1]['title'])
-    twoday = parse_weather(weather_data['entries'][2]['title'])
-    return today, tomorrow, twoday
+    if (len(weather_data['entries']) == 3):
+      today = parse_weather(weather_data['entries'][0]['title'])
+      tomorrow = parse_weather(weather_data['entries'][1]['title'])
+      twoday = parse_weather(weather_data['entries'][2]['title'])
+      return today, tomorrow, twoday
+    else:
+      logger.error("Cant find weather data for 3 days focus")  
   except Exception as e:
-    logger.error("Error getting weather update: " + e.message)
+    logger.exception("Error getting weather update")
     return None
 
 def main():

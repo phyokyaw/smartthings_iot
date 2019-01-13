@@ -12,7 +12,7 @@ LOW_RANGE = 30
 UP_RANGE = 100
 
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.DEBUG)
+logger.setLevel(logging.WARNING)
 logger.addHandler(pi_status_light.handler)
 
 class RequestHandler(SimpleHTTPServer.SimpleHTTPRequestHandler):

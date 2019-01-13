@@ -18,15 +18,13 @@ HEAT_BUTTON = 29
 
 HOME_ROUTER_IP = "192.168.1.1"
 
-
-
-path = "/var/log/thermostat.log"
+path = "/var/log/network.log"
 
 # add a rotating handler
 handler = RotatingFileHandler(path, maxBytes=1024*500, backupCount=5)
 handler.setFormatter(logging.Formatter('%(asctime)s.%(msecs)03d %(levelname)-8s [%(filename)s:%(lineno)d] %(message)s', datefmt='%d/%m/%Y %H:%M:%S'))
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.DEBUG)
+logger.setLevel(logging.WARNING)
 logger.addHandler(handler)
 
 def log():
@@ -57,6 +55,7 @@ class UpdateNetworkStatus(Thread):
         socket.gethostbyaddr(HOME_ROUTER_IP)
         setDeviceStatusToOn(True)
       except socket.error:
+        logger.error("Unable to connect to network")
         setDeviceStatusToOn(False)
       time.sleep(5)
 
